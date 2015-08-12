@@ -16,26 +16,37 @@ args = None
 
 
 class SparkleProtocol(asyncio.Protocol):
-    _step = 0
+
+    def __init__(self):
+        logging.debug("SparkleProtocol initizalition")
+        self._transport = None
+        self._step = 0
+        self._nonce = None
+        super().__init__()
 
     def connection_made(self, transport):
         # logging.debug("connect from %s" % transport.get_extra_info('peername'))
-        self.transport = transport
+        logging.debug("New connection")
+        self._transport = transport
         self._step = 0
+        self._nonce = urandom(40)
+        # Handshake step 0: send nonce
+        if self._step == 0:
+            logging.debug("Generated nonce: %s" % self._nonce)
+            self._transport.write(self._nonce)
+            self._step += 1
 
     def data_received(self, data):
+        logging.debug("Data received %s: %s" % (len(data), data))
         # Manage handshake
-        if self._step == 0:
-            nonce = urandom(40)
-            logging.debug("Generated nonce: %s" % nonce)
-            self.transport.write(nonce)
-            self._step += 1
-        elif self._step == 1:
+        if self._step == 1:
             logging.debug("Read %s data" % len(data))
             response = self._decrypt_data(data)
-            logging.debug("Response: %s")
+            (_client_nonce, _client_id) = (response[:40], response[-12:])
+            if _client_nonce != self._nonce:
+                self._transport.close()
+            logging.debug("Device ID %s connected" % _client_id)
             self._step += 1
-
 
     def protocol_received(self, data):
         raise NotImplementedError
