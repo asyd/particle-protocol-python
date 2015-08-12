@@ -4,7 +4,7 @@ import logging
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
-
+from os import urandom
 
 parser = argparse.ArgumentParser(description='Sparkle server')
 
@@ -16,18 +16,36 @@ args = None
 
 
 class SparkleProtocol(asyncio.Protocol):
+    _step = 0
+
     def connection_made(self, transport):
+        # logging.debug("connect from %s" % transport.get_extra_info('peername'))
         self.transport = transport
         self._step = 0
 
     def data_received(self, data):
-        print('Data received: {!r}'.format(data.decode()))
-        self.transport.write(data)
-        self._step += 1
+        # Manage handshake
+        if self._step == 0:
+            nonce = urandom(40)
+            logging.debug("Generated nonce: %s" % nonce)
+            self.transport.write(nonce)
+            self._step += 1
+        elif self._step == 1:
+            logging.debug("Read %s data" % len(data))
+            response = self._decrypt_data(data)
+            logging.debug("Response: %s")
+            self._step += 1
+
 
     def protocol_received(self, data):
         raise NotImplementedError
 
+    def _decrypt_data(self, ciphertext):
+        clear_text = args.private_key.decrypt(
+            ciphertext,
+            padding.PKCS1v15()
+        )
+        return clear_text
 
 class DeviceServer(SparkleProtocol):
     def protocol_received(self, data):
@@ -53,7 +71,7 @@ if __name__ == '__main__':
     server_init()
 
     loop = asyncio.get_event_loop()
-    coro = loop.create_server(SparkleProtocol, args.bind, args.port)
+    coro = loop.create_server(DeviceServer, args.bind, args.port)
     server = loop.run_until_complete(coro)
 
     print('Serving on {}'.format(server.sockets[0].getsockname()))
