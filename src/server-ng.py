@@ -18,10 +18,20 @@ args = None
 class SparkleProtocol(asyncio.Protocol):
     def connection_made(self, transport):
         self.transport = transport
+        self._step = 0
 
     def data_received(self, data):
         print('Data received: {!r}'.format(data.decode()))
-        self.transport.close()
+        self.transport.write(data)
+        self._step += 1
+
+    def protocol_received(self, data):
+        raise NotImplementedError
+
+
+class DeviceServer(SparkleProtocol):
+    def protocol_received(self, data):
+        print("toto")
 
 
 def server_init():
