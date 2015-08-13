@@ -18,14 +18,15 @@ args = None
 class SparkleProtocol(asyncio.Protocol):
 
     def __init__(self):
-        logging.debug("SparkleProtocol initizalition")
+        logging.debug("SparkleProtocol initialisation")
         self._transport = None
-        self._step = 0
+        self._step = None
+        self._client_id = None
         self._nonce = None
         super().__init__()
 
     def connection_made(self, transport):
-        # logging.debug("connect from %s" % transport.get_extra_info('peername'))
+        logging.debug("connect from %s" % transport.get_extra_info('peername')[0])
         logging.debug("New connection")
         self._transport = transport
         self._step = 0
@@ -37,30 +38,44 @@ class SparkleProtocol(asyncio.Protocol):
             self._step += 1
 
     def data_received(self, data):
-        logging.debug("Data received %s: %s" % (len(data), data))
-        # Manage handshake
+        logging.debug("Data received (%s) %s: %s" % (self._step, len(data), data))
+        logging.debug("Read %s data" % len(data))
+        # Handshake step 1: reply with nonce + device_id encrypted with public server key
         if self._step == 1:
-            logging.debug("Read %s data" % len(data))
+            assert(len(data) == 256)
             response = self._decrypt_data(data)
             (_client_nonce, _client_id) = (response[:40], response[-12:])
             if _client_nonce != self._nonce:
+                logging.critical("Invalid nonce received, closing connection.")
                 self._transport.close()
-            logging.debug("Device ID %s connected" % _client_id)
+            self._client_id = _client_id.decode('ASCII')
+            logging.debug("Device ID %s connected" % self._client_id)
             self._step += 1
+        elif self._step == 2:
+            random = urandom(40)
+            (aes_key, iv, salt) = (random[:16], random[16:32], random[-8:])
+            logging.debug("AES KEY: %s, IV: %s, SALT: %s" % (aes_key, iv, salt))
+            self._transport.write(b'pong')
+            self._step += 1
+        elif self._step > 2:
+            return self.protocol_received(data)
 
     def protocol_received(self, data):
         raise NotImplementedError
 
-    def _decrypt_data(self, ciphertext):
+    @staticmethod
+    def _decrypt_data(data):
         clear_text = args.private_key.decrypt(
-            ciphertext,
+            data,
             padding.PKCS1v15()
         )
         return clear_text
 
+
 class DeviceServer(SparkleProtocol):
     def protocol_received(self, data):
-        print("toto")
+        self._transport.write(b'pong')
+        print(data.decode('ASCII'))
 
 
 def server_init():

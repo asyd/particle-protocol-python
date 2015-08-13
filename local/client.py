@@ -5,7 +5,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 import random
 import string
-
+import time
 
 class SparkleClient(asyncio.Protocol):
     def __init__(self, loop):
@@ -13,7 +13,7 @@ class SparkleClient(asyncio.Protocol):
         self._step = 0
         self._nonce = None
         self._public_key = None
-        self._device_id = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(12))
+        self._device_id = 'SRUUITNQWRM1'
         logging.debug("Generated device id: %s" % self._device_id)
         self._transport = None
         with open("publickey.pem", "rb") as key:
@@ -30,8 +30,14 @@ class SparkleClient(asyncio.Protocol):
         if self._step == 0:
             self._nonce = data
             response = self._nonce + bytes(self._device_id, 'ASCII')
-            logging.debug("%s" % response.__class__)
+            self._step += 1
             self._transport.write(self._encrypt_data(response))
+            logging.debug("Sending toto")
+            self._transport.write(b"ping")
+        elif self._step > 0:
+            logging.debug("Sending toto")
+            self._transport.write(b"ping")
+            time.sleep(1)
             self._step += 1
 
     def connection_lost(self, exc):
