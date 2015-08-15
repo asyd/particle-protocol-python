@@ -3,12 +3,13 @@ __author__ = 'nadley'
 import socketserver
 import sys
 import binascii
-from datetime import  datetime
+from datetime import datetime
 from os import urandom
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
+import logging
+
 
 class MyTCPHandler(socketserver.BaseRequestHandler):
     """
@@ -18,14 +19,17 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
     override the handle() method to implement communication to the
     client.
     """
+
     def setup(self):
-        print("Opening a Socket")
+        self.private_key_path = "../privatekey.pem"
+        self.private_key = None
+        self._load_server_private_key()
 
     def handle(self):
-        self.private_key = self._load_server_private_key()
         while True:
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-            print("{} : Incoming request from : {} on socket port : {}".format(now, self.client_address[0], self.client_address[1]))
+            print("{} : Incoming request from : {} on socket port : {}".format(now, self.client_address[0],
+                                                                               self.client_address[1]))
 
             nonce = self._generate_nonce()
             print("Nonce is :  {}".format(nonce))
@@ -37,8 +41,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
             print("Response size : {}".format(sys.getsizeof(response_data)))
             print(len(response_data))
 
-
-            decrypted = self._decrypt_data(self.private_key,response_data)
+            decrypted = self._decrypt_data(response_data)
             # print(type(decrypted))
             print("Decrypted value is : {}".format(decrypted))
 
@@ -46,10 +49,10 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 
 
 
-        # self.request is the TCP socket connected to the client
-        #self.data = self.request.recv(1024).strip()
-        #print("{} wrote:".format(self.client_address[0]))
-        #print(self.data)
+            # self.request is the TCP socket connected to the client
+            # self.data = self.request.recv(1024).strip()
+            # print("{} wrote:".format(self.client_address[0]))
+            # print(self.data)
 
     def finish(self):
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
@@ -60,39 +63,41 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
         return urandom(40)
 
     def _load_server_private_key(self):
-        with open("../ServerKeys/cloud_private.pem", "rb") as key_file:
-            private_key = serialization.load_pem_private_key(
-            key_file.read(),
-            password=None,
-            backend=default_backend()
+        # logging.debug("Loading private key %(self.private_key_path)s" % locals())
+        with open(self.private_key_path, "rb") as key_file:
+            self.private_key = serialization.load_pem_private_key(
+                key_file.read(),
+                password=None,
+                backend=default_backend()
             )
-        return private_key
+        logging.debug("Private key size: %s" % self.private_key.size())
 
     def _load_server_public_key(self):
         with open("../ServerKeys/cloud_public.pem", "rb") as key_file:
             public_key = serialization.load_pem_public_key(
-            key_file.read(),
-            backend=default_backend()
+                key_file.read(),
+                backend=default_backend()
             )
         return public_key
 
-    def _encrypt_data(self,public_key, data):
-        ciphertext = public_key.encrypt(
+    def _encrypt_data(self, data):
+        ciphertext = self.public_key.encrypt(
             data.encode(),
             padding.PKCS1v15()
         )
         return ciphertext
 
-
-    def _decrypt_data(self,private_key, ciphertext):
-        clear_text = private_key.decrypt(
+    def _decrypt_data(self, ciphertext):
+        clear_text = self.private_key.decrypt(
             ciphertext,
             padding.PKCS1v15()
         )
-        return  clear_text
+        return clear_text
+
 
 if __name__ == "__main__":
-    HOST, PORT = "192.168.1.33", 5683
+    HOST, PORT = "127.0.0.1", 5683
+    logging.basicConfig(level=logging.DEBUG)
 
     # Create the server
     server = socketserver.TCPServer((HOST, PORT), MyTCPHandler)
