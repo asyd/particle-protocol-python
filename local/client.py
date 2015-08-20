@@ -5,7 +5,7 @@ from cryptography.hazmat.primitives import serialization, hmac, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
 import binascii
-
+import sys
 
 class SparkleClient(asyncio.Protocol):
     def __init__(self, loop):
@@ -51,14 +51,14 @@ class SparkleClient(asyncio.Protocol):
         elif self._step == 1:
             assert(len(data) == 384)
             (encrypted_random, signature) = (data[:128], data[-256:])
-            logging.debug("Handshake step 4: signature: %s" % signature)
+            logging.debug("Handshake step 4: get session key: %s" % signature)
             random = self._decrypt_data(encrypted_random)
             (aes_key, iv, salt) = (random[:16], random[16:32], random[-8:])
-            logging.debug("Handshake step 4: decrypted data (size: %s): AES: %s, IV: %s, SALT: %s"
+            logging.debug("Handshake step 4: get session key (size: %s): AES: %s, IV: %s, SALT: %s"
                           % (len(random), aes_key, iv, salt))
             # Verify signature
             try:
-                h = hmac.HMAC(aes_key, hashes.SHA1(), backend=default_backend())
+                h = hmac.HMAC(random, hashes.SHA1(), backend=default_backend())
                 h.update(encrypted_random)
                 local_hmac = h.finalize()
                 logging.debug("Local HMAC: %s" % local_hmac)
@@ -72,10 +72,10 @@ class SparkleClient(asyncio.Protocol):
             except InvalidSignature as e:
                 logging.critical("Invalid signature: %s" % e)
                 self._transport.close()
-            logging.debug("Server signature ok")
 
     def connection_lost(self, exc):
         self.loop.stop()
+        sys.exit(1)
 
     def _decrypt_data(self, data):
         return self._device_key.decrypt(

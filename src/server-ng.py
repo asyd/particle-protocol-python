@@ -6,6 +6,7 @@ from cryptography.hazmat.primitives import serialization, hmac, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from os import urandom
 import binascii
+import rsa
 
 parser = argparse.ArgumentParser(description='Sparkle server')
 
@@ -41,11 +42,12 @@ class SparkleProtocol(asyncio.Protocol):
         # Handshake step 2: Server responds with 40 bytes of random data as a nonce.
         if self._step == 0:
             logging.debug("Generated nonce: %s" % self._nonce)
-            self._transport.write(self._nonce)
+            self.write(self._nonce)
             self._step += 1
 
     def connection_lost(self, exc):
-        logging.debug("Connection lost with")
+        logging.debug("Connection lost with device ID: %s (%s)" %
+                      (self._device_id_hex, self._transport.get_extra_info('peername')[0]))
 
     def data_received(self, data):
         logging.debug("Data received (%s) %s: %s" % (self._step, len(data), data))
@@ -71,7 +73,6 @@ class SparkleProtocol(asyncio.Protocol):
             self._device_id = _client_id
             # Store an hexadecimal string of device ID
             self._device_id_hex = binascii.hexlify(_client_id).decode()
-            logging.info("Device ID %s connected" % self._device_id_hex)
             logging.debug("Loading device public key from %s/%s.pem" % (args.devices_keys, self._device_id_hex))
             # Server looks up STM32 ID, retrieving the Core's public RSA key.
             try:
@@ -88,43 +89,59 @@ class SparkleProtocol(asyncio.Protocol):
             except FileNotFoundError:
                 logging.critical("Device ID %s public key not found, closing connection" % self._device_id_hex)
                 self._transport.close()
+            logging.info("Device ID %s connected" % self._device_id_hex)
             # Handshake step 4: Server creates secure session key
             # Server generates 40 bytes of secure random data to serve
             # as components of a session key for AES-128-CBC encryption.
-            random = urandom(40)
+            session_key = urandom(40)
             # The first 16 bytes (MSB first) will be the key, the next 16 bytes (MSB first) will be the
             # initialization vector (IV), and the final 8 bytes (MSB first) will be the salt.
-            (aes_key, iv, salt) = (random[:16], random[16:32], random[-8:])
+            (aes_key, iv, salt) = (session_key[:16], session_key[16:32], session_key[-8:])
             logging.debug("AES KEY: %s, IV: %s, SALT: %s" % (aes_key, iv, salt))
             # Server RSA encrypts this 40-byte message using the Core's public key to create a 128-byte ciphertext.
-            ciphertext = self._encrypt_data(random)
+            ciphertext = self._encrypt_data(session_key)
             logging.debug("Ciphertext size: %s" % len(ciphertext))
             # Server creates a 20-byte HMAC of the ciphertext using SHA1 and the 40 bytes generated
             # in the previous step as the HMAC key.
-            h = hmac.HMAC(aes_key, hashes.SHA1(), backend=default_backend())
-            h.update(ciphertext)
-            hmac_result = h.finalize()
+            hash = hmac.HMAC(session_key, hashes.SHA1(), backend=default_backend())
+            hash.update(ciphertext)
+            hmac_result = hash.finalize()
             logging.debug("HMAC (size: %s): %s" % (len(hmac_result), hmac_result))
             # Server signs the HMAC with its RSA private key generating a 256-byte signature.
             signature = self._sign_data(hmac_result)
             logging.debug("Signature size: %s" % len(signature))
             # Server sends 384 bytes to Core: the ciphertext then the signature.
-            self._transport.write(ciphertext + signature)
+            self.write(ciphertext + signature)
             self._step += 1
         elif self._step > 2:
             return self.protocol_received(data)
+
+    def write(self, data):
+        logging.debug("Sending %s bytes to %s (%s), step: %s" % (
+            len(data),
+            self._device_id_hex,
+            self._transport.get_extra_info('peername')[0],
+            self._step
+        ))
+        self._transport.write(data)
 
     def protocol_received(self, data):
         raise NotImplementedError
 
     @staticmethod
     def _sign_data(data):
-        signer = args.private_key.signer(
-            padding.PKCS1v15(),
-            hashes.SHA1()
-        )
-        signer.update(data)
-        return signer.finalize()
+        """
+        Hmm there is something strange here, check: https://github.com/spark/spark-protocol/blob/master/js/lib/ICrypto.js#L173
+        The function sign is not used, but encrypt is. So i need to create a rsa (yeah, another module) instance to cipher
+        data using the private key
+        """
+        logging.debug("Loading private key from: %s" % args.private_key_file)
+        with open(args.private_key_file, "rb") as key_file:
+            keydata = key_file.read()
+        key = rsa.PrivateKey.load_pkcs1(keydata)
+        return rsa.encrypt(data, key)
+
+
 
     @staticmethod
     def _decrypt_data(data):
