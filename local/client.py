@@ -36,13 +36,15 @@ class SparkleClient(asyncio.Protocol):
 
     def connection_made(self, transport):
         self._transport = transport
+        logging.debug("Handshake step 1: Socket open")
 
     def data_received(self, data):
         logging.debug("Received %s data" % len(data))
         if self._step == 0:
+            logging.debug("Handshake step 2: Receive(nonce())")
             assert(len(data) == 40)
-            logging.debug("Send encrypted nonce")
             self._nonce = data
+            logging.debug("Handshake step 3: Send(Encrypt(nonce + device_id))")
             response = self._nonce + self._device_id
             self._transport.write(self._encrypt_data(response))
             self._step += 1
@@ -52,11 +54,12 @@ class SparkleClient(asyncio.Protocol):
             logging.debug("Handshake step 4: signature: %s" % signature)
             random = self._decrypt_data(encrypted_random)
             (aes_key, iv, salt) = (random[:16], random[16:32], random[-8:])
-            logging.debug("Handshake step 4: decrypted data (size: %s): AES: %s, IV: %s, SALT: %s" % (len(random), aes_key, iv, salt))
+            logging.debug("Handshake step 4: decrypted data (size: %s): AES: %s, IV: %s, SALT: %s"
+                          % (len(random), aes_key, iv, salt))
             # Verify signature
-            h = hmac.HMAC(aes_key, hashes.SHA1(), backend=default_backend())
-            h.update(encrypted_random)
             try:
+                h = hmac.HMAC(aes_key, hashes.SHA1(), backend=default_backend())
+                h.update(encrypted_random)
                 local_hmac = h.finalize()
                 logging.debug("Local HMAC: %s" % local_hmac)
                 verifier = self._server_pkey.verifier(
@@ -85,10 +88,6 @@ class SparkleClient(asyncio.Protocol):
             data,
             padding.PKCS1v15()
         )
-
-
-
-
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)

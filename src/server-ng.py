@@ -44,6 +44,9 @@ class SparkleProtocol(asyncio.Protocol):
             self._transport.write(self._nonce)
             self._step += 1
 
+    def connection_lost(self, exc):
+        logging.debug("Connection lost with")
+
     def data_received(self, data):
         logging.debug("Data received (%s) %s: %s" % (self._step, len(data), data))
         logging.debug("Read %s data" % len(data))
@@ -140,8 +143,7 @@ class SparkleProtocol(asyncio.Protocol):
 
 class DeviceServer(SparkleProtocol):
     def protocol_received(self, data):
-        self._transport.write(b'pong')
-        print(data.decode('ASCII'))
+        logging.info("DeviceServer hit")
 
 
 def server_init():
