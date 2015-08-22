@@ -66,13 +66,12 @@ class SparkleProtocol(asyncio.Protocol):
             # otherwise Server must close the connection.
             #
             # Remaining 12 bytes of message represent STM32 ID.
-            (_client_nonce, _client_id) = (ciphertext[:40], ciphertext[-12:])
+            (_client_nonce, self._device_id) = (ciphertext[:40], ciphertext[40:52])
             if _client_nonce != self._nonce:
                 logging.critical("Invalid nonce received, closing connection.")
                 self._transport.close()
-            self._device_id = _client_id
             # Store an hexadecimal string of device ID
-            self._device_id_hex = binascii.hexlify(_client_id).decode()
+            self._device_id_hex = binascii.hexlify(self._device_id).decode()
             logging.debug("Loading device public key from %s/%s.pem" % (args.devices_keys, self._device_id_hex))
             # Server looks up STM32 ID, retrieving the Core's public RSA key.
             try:
