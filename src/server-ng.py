@@ -128,20 +128,27 @@ class SparkleProtocol(asyncio.Protocol):
     def protocol_received(self, data):
         raise NotImplementedError
 
+    # @staticmethod
+    # def _sign_data(data):
+    #     """
+    #     Hmm there is something strange here, check: https://github.com/spark/spark-protocol/blob/master/js/lib/ICrypto.js#L173
+    #     The function sign is not used, but encrypt is. So i need to create a rsa (yeah, another module) instance to cipher
+    #     data using the private key
+    #     """
+    #     logging.debug("Loading private key from: %s" % args.private_key_file)
+    #     with open(args.private_key_file, "rb") as key_file:
+    #         keydata = key_file.read()
+    #     key = rsa.PrivateKey.load_pkcs1(keydata)
+    #     return rsa.encrypt(data, key)
+
     @staticmethod
     def _sign_data(data):
-        """
-        Hmm there is something strange here, check: https://github.com/spark/spark-protocol/blob/master/js/lib/ICrypto.js#L173
-        The function sign is not used, but encrypt is. So i need to create a rsa (yeah, another module) instance to cipher
-        data using the private key
-        """
-        logging.debug("Loading private key from: %s" % args.private_key_file)
-        with open(args.private_key_file, "rb") as key_file:
-            keydata = key_file.read()
-        key = rsa.PrivateKey.load_pkcs1(keydata)
-        return rsa.encrypt(data, key)
-
-
+        signer = args.private_key.signer(
+            padding.PKCS1v15(),
+            hashes.SHA1()
+        )
+        signer.update(data)
+        return signer.finalize()
 
     @staticmethod
     def _decrypt_data(data):
