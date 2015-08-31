@@ -41,4 +41,5 @@ Upload the server public key and its IP (the one you run the server) :
 
 # Run server
 
-    ./bin/python ./particle-protocol-python/particle-server.py --bind 0.0.0.0
+    cd particle-protocol-python
+    ../bin/python ./particle-server.py --bind 0.0.0.0
