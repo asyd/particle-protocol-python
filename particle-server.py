@@ -9,7 +9,7 @@ parser = argparse.ArgumentParser(description='Sparkle server')
 
 parser.add_argument('--bind', dest='bind', help='Bind address', default='127.0.0.1')
 parser.add_argument('--port', dest='port', help='TCP Port', default=5683)
-parser.add_argument('--private-key', dest='private_key_file', help='Private key', default='privatekey.pem')
+parser.add_argument('--private-key', dest='private_key_file', help='Private key', default='server_key.pem')
 parser.add_argument('--devices-keys', dest='devices_keys', help='Directory to search devices keys', default='devices')
 args = None
 
